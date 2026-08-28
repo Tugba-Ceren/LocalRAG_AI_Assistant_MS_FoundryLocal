@@ -1,18 +1,65 @@
 import math
 from foundry_local_sdk import Configuration, FoundryLocalManager
+#Week 2 Exercise 2
+import json
+import sqlite3
+conn = sqlite3.connect("spotterai_rag.db")
+vector_list = [0.12, -0.45, 0.89, 0.23]
+json_string = json.dumps(vector_list)
 
 # Knowledge base
 documents = [
-    "Foundry Local runs AI models directly on your device without cloud connectivity.",
-    "The Foundry Local SDK supports Python, C#, JavaScript, and Rust.",
-    "Embedding models convert text into numerical vectors for similarity search.",
-    "Foundry Local uses ONNX Runtime for efficient model inference on CPUs and GPUs.",
-    "The model catalog provides pre-optimized models that you can download and run locally.",
-    "Retrieval-augmented generation grounds model responses in your own data.",
-    "Vector similarity search finds documents that are semantically close to a query.",
-    "Chat completions generate natural language responses from a prompt and context.",
+    "SpotterAI is an autonomous AI-powered security camera designed for local object detection and event reporting.",
+    "The SpotterAI SDK supports Python, C++, C#, and JavaScript for local integration and custom alerts.",
+    "SpotterAI generates vector embeddings locally on the device to index video metadata and text event logs.",
+    "SpotterAI leverages ONNX Runtime and local NPU acceleration to process 4K video feeds at 60 FPS offline.",
+    "The SpotterAI model catalog includes pre-trained computer vision and small language models downloadable for on-device execution.",
+    "SpotterAI uses retrieval-augmented generation to summarize security events using only locally stored log data.",
+    "Vector similarity search in SpotterAI helps security teams query past incidents by semantic intent rather than timestamp.",
+    "SpotterAI chat completions generate natural language incident summaries directly from prompt instructions and camera logs.",
 ]
+# 2. SQLite Database Functions
+DB_NAME = "spotterai_rag.db"
+def init_db():
+    """Create SQLite table to store manual text and vector embeddings."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS document_chunks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content TEXT NOT NULL,
+            embedding TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
 
+
+def ingest_documents(embedding_client):
+    """Embed documents using Foundry Local SDK and persist them in SQLite."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    # Prevent duplicate insertions
+    cursor.execute("SELECT COUNT(*) FROM document_chunks")
+    if cursor.fetchone()[0] > 0:
+        print("Knowledge base already ingested in SQLite.")
+        conn.close()
+        return
+
+    print("Generating embeddings and saving to SQLite...")
+    response = embedding_client.generate_embeddings(documents)
+
+    for doc_text, item in zip(documents, response.data):
+        # Store floating-point embedding array as a JSON string in SQLite
+        cursor.execute(
+            "INSERT INTO document_chunks (content, embedding) VALUES (?, ?)",
+            (doc_text, json.dumps(item.embedding)),
+        )
+
+    conn.commit()
+    conn.close()
+    print(f"Stored {len(documents)} document chunks in {DB_NAME}.")
 
 def cosine_similarity(a, b):
     """Compute cosine similarity between two vectors."""
@@ -70,8 +117,8 @@ def main():
     print("  - The model catalog")
     print("  - RAG and chat completions")
     print("\nExample questions:")
-    print('  "What programming languages does the SDK support?"')
-    print('  "How does Foundry Local run models?"')
+    print('  "What languages does the SpotterAI support?"')
+    print('  "How does SpotterAI works?"')
     print('  "What is retrieval-augmented generation?"')
     print('\nType "quit" to exit.\n')
 
