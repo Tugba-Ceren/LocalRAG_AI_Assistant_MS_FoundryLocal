@@ -19,7 +19,11 @@ documents = [
     "SpotterAI chat completions generate natural language incident summaries directly from prompt instructions and camera logs.",
 ]
 # 2. SQLite Database Functions
+
+#Week 2 ,Exercise 2
 DB_NAME = "spotterai_rag.db"
+#Define the function 
+
 def init_db():
     """Create SQLite table to store manual text and vector embeddings."""
     conn = sqlite3.connect(DB_NAME)
@@ -80,6 +84,7 @@ def find_relevant(query_embedding, doc_embeddings, top_k=2):
 
 
 def main():
+    init_db()
     # Initialize the SDK
     config = Configuration(app_name="foundry_local_rag")
     FoundryLocalManager.initialize(config)
@@ -93,6 +98,8 @@ def main():
     print()
     embedding_model.load()
     embedding_client = embedding_model.get_embedding_client()
+    # Save documents into SQLite (Call this right after getting embedding_client!)
+    ingest_documents(embedding_client) 
 
     # Embed all documents
     response = embedding_client.generate_embeddings(documents)
@@ -110,7 +117,7 @@ def main():
 
     print("\nModels loaded. Ready for questions.")
     print("\nThe knowledge base contains information about:")
-    print("  - Foundry Local features and architecture")
+    print("  - SpotterAI  features and architecture")
     print("  - Supported programming languages")
     print("  - Embedding models and vector search")
     print("  - ONNX Runtime inference")
@@ -133,6 +140,8 @@ def main():
         query_embedding = query_response.data[0].embedding
 
         # Retrieve the most relevant documents
+        #When k is increased to 4 for a better match code needed to be debug.
+        #Line chunk.choices[0] gives an error thats why I kept k at 2
         results = find_relevant(query_embedding, doc_embeddings, top_k=2)
         context = "\n".join(f"- {documents[i]}" for i, _ in results)
 
@@ -148,7 +157,7 @@ def main():
             },
             {"role": "user", "content": query},
         ]
-
+       
         # Stream the response
         print("Answer: ", end="", flush=True)
         for chunk in chat_client.complete_streaming_chat(messages):
