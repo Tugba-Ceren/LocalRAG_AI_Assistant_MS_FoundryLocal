@@ -65,6 +65,21 @@ def ingest_documents(embedding_client):
     conn.close()
     print(f"Stored {len(documents)} document chunks in {DB_NAME}.")
 
+
+def fetch_all_documents():
+
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT content, embedding FROM document_chunks")
+    rows = cursor.fetchall()
+    conn.close()
+
+   
+
+    db_docs = [row[0] for row in rows]
+    db_embeddings = [json.loads(row[1]) for row in rows]
+    return db_docs, db_embeddings
+
 def cosine_similarity(a, b):
     """Compute cosine similarity between two vectors."""
     dot = sum(x * y for x, y in zip(a, b))
