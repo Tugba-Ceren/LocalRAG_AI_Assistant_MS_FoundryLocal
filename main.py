@@ -3,10 +3,6 @@ from foundry_local_sdk import Configuration, FoundryLocalManager
 #Week 2 Exercise 2
 import json
 import sqlite3
-conn = sqlite3.connect("spotterai_rag.db")
-vector_list = [0.12, -0.45, 0.89, 0.23]
-json_string = json.dumps(vector_list)
-
 # Knowledge base
 documents = [
     "SpotterAI is an autonomous AI-powered security camera designed for local object detection and event reporting.",
@@ -70,15 +66,15 @@ def fetch_all_documents():
 
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT content, embedding FROM document_chunks")
+    cursor.execute("SELECT id, content, embedding FROM document_chunks")
     rows = cursor.fetchall()
     conn.close()
 
    
-
-    db_docs = [row[0] for row in rows]
-    db_embeddings = [json.loads(row[1]) for row in rows]
-    return db_docs, db_embeddings
+    db_ids = [row[0] for row in rows]
+    db_docs = [row[1] for row in rows]
+    db_embeddings = [json.loads(row[2]) for row in rows]
+    return db_ids ,db_docs, db_embeddings
 
 def cosine_similarity(a, b):
     """Compute cosine similarity between two vectors."""
@@ -96,6 +92,51 @@ def find_relevant(query_embedding, doc_embeddings, top_k=2):
         scores.append((i, score))
     scores.sort(key=lambda x: x[1], reverse=True)
     return scores[:top_k]
+def answer_query(query, embedding_client, chat_client, db_ids, db_docs, db_embeddings):
+    """Week 4 Core Function: Retrieves context from SQLite and generates an answer using local LLM."""
+    # 1. Embed query
+    query_response = embedding_client.generate_embeddings([query])
+    # Access the vector from the response object
+    query_embedding = query_response.data[0].embedding
+    # 2. Retrieve top matching chunks 
+    
+    results = find_relevant(query_embedding, db_embeddings, top_k=2)
+    
+    # 3. Format context with document source labels for Responsible AI citations
+    context_blocks = []
+    for index, _ in results:
+        doc_id = db_ids[index]
+        text = db_docs[index]
+        context_blocks.append(f"[Document {doc_id}]: {text}")
+    
+    context = "\n".join(context_blocks)
+
+    # 4. Construct prompt with safety rules and citation requirements
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful and polite technical assistant.\n"
+                "Answer the user's question accurately using ONLY the provided context.\n"
+                "If the context does not contain enough information to answer, state clearly: "
+                "'I do not have enough context to answer that question.'\n"
+                "Whenever possible, cite the document numbers used in your answer (e.g., '[Document X]').\n\n"
+                f"Context:\n{context}"
+            ),
+        },
+        {"role": "user", "content": query},
+    ]
+
+    # 5. Stream LLM output cleanly with fallback checks
+    print("\nAnswer: ", end="", flush=True)
+    for chunk in chat_client.complete_streaming_chat(messages):
+        if not getattr(chunk, "choices", None):
+            continue
+        delta = getattr(chunk.choices[0], "delta", None)
+        content = getattr(delta, "content", None) if delta else None
+        if content:
+            print(content, end="", flush=True)
+    print("\n")
 
 
 def main():
@@ -113,14 +154,13 @@ def main():
     print()
     embedding_model.load()
     embedding_client = embedding_model.get_embedding_client()
-    # Save documents into SQLite (Call this right after getting embedding_client!)
+
+    # Save documents into SQLite
     ingest_documents(embedding_client) 
 
-    # Embed all documents
-    response = embedding_client.generate_embeddings(documents)
-    doc_embeddings = [item.embedding for item in response.data]
-    print(f"Indexed {len(doc_embeddings)} documents.")
-
+    # Retrieve stored documents and vector embeddings straight from SQLite
+    db_ids, db_docs, db_embeddings = fetch_all_documents()
+    print(f"Loaded {len(db_embeddings)} documents directly from SQLite.")
     # Load the chat model
     chat_model = manager.catalog.get_model("qwen2.5-0.5b")
     chat_model.download(
@@ -149,37 +189,17 @@ def main():
         query = input("Question: ").strip()
         if not query or query.lower() == "quit":
             break
+        answer_query(
+            query,
+            embedding_client,
+            chat_client,
+            db_ids,
+            db_docs,
+            db_embeddings,
+        )
 
-        # Embed the query
-        query_response = embedding_client.generate_embedding(query)
-        query_embedding = query_response.data[0].embedding
-
-        # Retrieve the most relevant documents
-        #When k is increased to 4 for a better match code needed to be debug.
-        #Line chunk.choices[0] gives an error thats why I kept k at 2
-        results = find_relevant(query_embedding, doc_embeddings, top_k=2)
-        context = "\n".join(f"- {documents[i]}" for i, _ in results)
-
-        # Build the prompt with retrieved context
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Answer the user's question using only the provided context. "
-                    "If the context doesn't contain enough information, say so.\n\n"
-                    f"Context:\n{context}"
-                ),
-            },
-            {"role": "user", "content": query},
-        ]
-       
-        # Stream the response
-        print("Answer: ", end="", flush=True)
-        for chunk in chat_client.complete_streaming_chat(messages):
-            content = chunk.choices[0].delta.content
-            if content:
-                print(content, end="", flush=True)
-        print("\n")
+    
+     
 
     # Clean up
     embedding_model.unload()
