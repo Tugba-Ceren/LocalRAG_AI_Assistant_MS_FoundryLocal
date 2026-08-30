@@ -101,26 +101,30 @@ def answer_query(query, embedding_client, chat_client, db_ids, db_docs, db_embed
     # 2. Retrieve top matching chunks 
     
     results = find_relevant(query_embedding, db_embeddings, top_k=2)
+    #At 1st test trial latency was longer than expected.
+    #This line added to shorten the response time.
+    top_score = results[0][1] if results else 0.0
+    if top_score < 0.35:
+        print("\nAnswer: I do not have enough context to answer that question.\n")
+        return
+    doc_id = db_ids[results[0][0]]
+    text = db_docs[results[0][0]]
+    context = f"[Document {doc_id}]: {text}"
     
-    # 3. Format context with document source labels for Responsible AI citations
-    context_blocks = []
-    for index, _ in results:
-        doc_id = db_ids[index]
-        text = db_docs[index]
-        context_blocks.append(f"[Document {doc_id}]: {text}")
     
-    context = "\n".join(context_blocks)
-
+#Response times were long so this part changed.
     # 4. Construct prompt with safety rules and citation requirements
     messages = [
         {
             "role": "system",
             "content": (
-                "You are a helpful and polite technical assistant.\n"
+                "You are a concise technical assistant.\n"
                 "Answer the user's question accurately using ONLY the provided context.\n"
+                "Do NOT use outside knowledge or general advice.\n"
+                "Keep your answer under 2 sentences.\n"
                 "If the context does not contain enough information to answer, state clearly: "
                 "'I do not have enough context to answer that question.'\n"
-                "Whenever possible, cite the document numbers used in your answer (e.g., '[Document X]').\n\n"
+                "ALWAYS cite the document numbers used in your answer (e.g., '[Document X]').\n\n"
                 f"Context:\n{context}"
             ),
         },
@@ -130,12 +134,10 @@ def answer_query(query, embedding_client, chat_client, db_ids, db_docs, db_embed
     # 5. Stream LLM output cleanly with fallback checks
     print("\nAnswer: ", end="", flush=True)
     for chunk in chat_client.complete_streaming_chat(messages):
-        if not getattr(chunk, "choices", None):
-            continue
-        delta = getattr(chunk.choices[0], "delta", None)
-        content = getattr(delta, "content", None) if delta else None
-        if content:
-            print(content, end="", flush=True)
+        if chunk.choices:
+            delta = chunk.choices[0].delta
+            if delta.content:
+                print(delta.content, end="", flush=True)
     print("\n")
 
 
@@ -197,15 +199,12 @@ def main():
             db_docs,
             db_embeddings,
         )
-
-    
-     
+ 
 
     # Clean up
     embedding_model.unload()
     chat_model.unload()
     print("Models unloaded. Done!")
-
 
 if __name__ == "__main__":
     main()
