@@ -104,7 +104,7 @@ def answer_query(query, embedding_client, chat_client, db_ids, db_docs, db_embed
     #At 1st test trial latency was longer than expected.
     #This line added to shorten the response time.
     top_score = results[0][1] if results else 0.0
-    if top_score < 0.35:
+    if top_score < 0.50:
         print("\nAnswer: I do not have enough context to answer that question.\n")
         return
     doc_id = db_ids[results[0][0]]
@@ -118,18 +118,17 @@ def answer_query(query, embedding_client, chat_client, db_ids, db_docs, db_embed
         {
             "role": "system",
             "content": (
-                "You are a concise technical assistant.\n"
-                "Answer the user's question accurately using ONLY the provided context.\n"
-                "Do NOT use outside knowledge or general advice.\n"
-                "Keep your answer under 2 sentences.\n"
-                "If the context does not contain enough information to answer, state clearly: "
-                "'I do not have enough context to answer that question.'\n"
-                "ALWAYS cite the document numbers used in your answer (e.g., '[Document X]').\n\n"
+                
+                "STRICT RULE: Answer in 1 short sentence max (under 12 words).\n"
+                "Use ONLY the context provided below. If context is missing, reply EXACTLY:\n"
+                "'I do not have enough context to answer that question.'\n\n"
                 f"Context:\n{context}"
             ),
         },
         {"role": "user", "content": query},
     ]
+            
+    
 
     # 5. Stream LLM output cleanly with fallback checks
     print("\nAnswer: ", end="", flush=True)
